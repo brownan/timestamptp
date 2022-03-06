@@ -1,0 +1,3 @@
+comment = 'timezone-preserving timestamp'
+default_version = '1.0'
+relocatable = true
