@@ -1,1 +1,19 @@
 CREATE EXTENSION timestamptp;
+SELECT timestamptp_in('2021-01-02T03:04:05-0500');
+     timestamptp_in     
+------------------------
+ 2021-01-02 03:04:05-05
+(1 row)
+
+SELECT '2000-01-01 00:00:00Z'::timestamptp;
+      timestamptp       
+------------------------
+ 2000-01-01 00:00:00+00
+(1 row)
+
+SELECT '2000-01-01 00:00:00+1011'::timestamptp;
+        timestamptp        
+---------------------------
+ 2000-01-01 00:00:00+10:11
+(1 row)
+
