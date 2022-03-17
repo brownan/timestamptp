@@ -1,8 +1,12 @@
+#include <assert.h>
+
 #include "postgres.h"
 #include "fmgr.h"
-#include "utils/timestamp.h"
-#include "utils/datetime.h"
 #include "miscadmin.h"
+#include "parser/scansup.h"
+#include "utils/builtins.h"
+#include "utils/datetime.h"
+#include "utils/timestamp.h"
 
 PG_MODULE_MAGIC;
 
@@ -22,6 +26,92 @@ typedef struct {
 #define TimestampTpGetDatum(X) PointerGetDatum(X)
 #define PG_GETARG_TIMESTAMPTP(n) DatumGetTimestampTp(PG_GETARG_DATUM(n))
 #define PG_RETURN_TIMESTAMPTP(x) return TimestampTpGetDatum(x)
+
+
+/*
+Interpret a timezone string and return a pg_tz struct
+This boilerplate is used in several places in utils/adt/timestamp.c in the postgres
+source, but unfortunately doesn't seem to be exported in any form that I can call.
+
+Takes mostly from parse_sane_timezone() in timestamp.c
+
+Functions which use this function should be marked STABLE at best. They can't be
+IMMUTABLE because the timezone lookups depend on the timezone definition tables.
+*/
+static pg_tz *get_timezone(text *zonename)
+{
+    char tzname[TZ_STRLEN_MAX + 1];
+    text_to_cstring_buffer(zonename, tzname, sizeof(tzname));
+
+    if (isdigit((unsigned char) *tzname)) {
+        ereport(
+            ERROR,
+            errmsg("invalid input syntax for type %s: \"%s\"", "numeric time zone", tzname),
+            errhint("Numeric time zones must have \"-\" or \"+\" as first character.")
+        );
+    }
+
+    int offset;
+    pg_tz *tzp;
+    int decode_status = DecodeTimezone(tzname, &offset);
+    if (decode_status == 0) {
+        tzp = pg_tzset_offset(offset);
+        if (tzp == NULL) {
+            /*
+            Shouldn't error because DecodeTimezone should have already done bounds
+            checking
+            */
+            ereport(
+                ERROR,
+                errmsg("Internal error translating offset into timezone")
+            );
+        }
+        return tzp;
+    } else if (decode_status == DTERR_TZDISP_OVERFLOW) {
+        ereport(
+            ERROR,
+            errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+            errmsg("numeric time zone \"%s\" out of range", tzname)
+        );
+    } else if (decode_status != DTERR_BAD_FORMAT) {
+        ereport(
+            ERROR,
+            errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+            errmsg("time zone \"%s\" not recognized", tzname)
+        );
+    }
+
+    /* String failed to parse as an offset spec. Try a timezone abbreviation */
+    char *lowzone = downcase_truncate_identifier(tzname, strlen(tzname), false);
+    int type = DecodeTimezoneAbbrev(0, lowzone, &offset, &tzp);
+    if (type == DYNTZ) {
+        assert(tzp != NULL);
+        return tzp;
+    } else if (type == TZ || type == DTZ) {
+        /* Convert this offset to a timezone */
+        tzp = pg_tzset_offset(-offset);
+        if (tzp == NULL) {
+            ereport(
+                ERROR,
+                errmsg("Internal error translating offset into timezone")
+            );
+        }
+        return tzp;
+    }
+
+    /* Failed to parse as an abbreviation, try full timezone name */
+    tzp = pg_tzset(tzname);
+    if (tzp != NULL) {
+        return tzp;
+    }
+
+    ereport(
+        ERROR,
+        errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+        errmsg("time zone \"%s\" not recognized", tzname)
+    );
+
+}
 
 
 /*
@@ -134,3 +224,127 @@ timestamptp_out(PG_FUNCTION_ARGS)
 }
 
 
+/*
+Returns a timestamptz from this timestamptp. Timezone offset information will be lost
+*/
+PG_FUNCTION_INFO_V1(get_timestamp);
+Datum
+get_timestamp(PG_FUNCTION_ARGS)
+{
+    TimestampTp *timestamp = PG_GETARG_TIMESTAMPTP(0);
+    PG_RETURN_TIMESTAMPTZ(timestamp->timestamp);
+}
+
+/*
+Returns an int16 representing the GMT offset in minutes from this
+timestamptp, positive values EAST
+*/
+PG_FUNCTION_INFO_V1(get_offset);
+Datum
+get_offset(PG_FUNCTION_ARGS)
+{
+    TimestampTp *timestamp = PG_GETARG_TIMESTAMPTP(0);
+    PG_RETURN_INT16(-timestamp->tzoffset);
+}
+
+/*
+Constructs a timestamptp from a timestamptz and an int16 offset
+Takes a timestamptz and an integer as arguments
+*/
+PG_FUNCTION_INFO_V1(make_timestamptp);
+Datum
+make_timestamptp(PG_FUNCTION_ARGS)
+{
+    TimestampTz timestamp = PG_GETARG_TIMESTAMPTZ(0);
+    int16 offset = PG_GETARG_INT32(1);
+
+    /*
+    Can't be 16 or more hours in either direction.
+    This limit comes from postgresql's timestamp parser, which will reject any
+    offset over 16
+    */
+    if (offset >= 60*16 || offset <= -60*16) {
+        ereport(
+            ERROR,
+            errcode(ERRCODE_INVALID_TIME_ZONE_DISPLACEMENT_VALUE),
+            errmsg("Timezone offset must be strictly between -960 and 960")
+        );
+    }
+
+    TimestampTp *ret = palloc(sizeof(TimestampTp));
+    ret->timestamp = timestamp;
+    ret->tzoffset = (TzOffset) -offset;
+
+    PG_RETURN_TIMESTAMPTP(ret);
+}
+
+
+/*
+Constructs a timestamptp from a timestamptz and a timezone
+This interprets the given timestamptz in the given timezone, and returns
+a timestamptp with the offset it would have in that timezone
+
+This function should be marked STABLE and not IMMUTABLE because it
+depends on system timezone definitions.
+*/
+PG_FUNCTION_INFO_V1(make_timestamptp_in_timezone);
+Datum
+make_timestamptp_in_timezone(PG_FUNCTION_ARGS)
+{
+    TimestampTz timestamp = PG_GETARG_TIMESTAMPTZ(0);
+    pg_tz *timezone = get_timezone(PG_GETARG_TEXT_PP(1));
+
+    /*
+    Decode the timestamp so that we can get the offset that it would have in this
+    timezone
+    */
+    struct pg_tm info;
+    int tz;
+    fsec_t fsec;
+    if (timestamp2tm(timestamp, &tz, &info, &fsec, NULL, timezone) != 0) {
+        ereport(
+            ERROR,
+            errmsg("timestamptz is out of range")
+        );
+    }
+
+    TimestampTp *ret = palloc(sizeof(TimestampTp));
+    ret->timestamp = timestamp;
+    ret->tzoffset = (TzOffset) tz / SECS_PER_MINUTE;
+    PG_RETURN_TIMESTAMPTP(ret);
+}
+
+
+/*
+Implements the cast from timestamptz to timestamptp
+
+We must choose a timezone offset to attach to the new timestamptp,
+so we choose the system's defined local timezone. To explicitly specify
+the timezone, use make_timestamptp()
+
+This function must be marked as STABLE and not IMMUTABLE because it depends on external
+state (the configured timezone)
+*/
+PG_FUNCTION_INFO_V1(timestamptz_to_timestamptp);
+Datum
+timestamptz_to_timestamptp(PG_FUNCTION_ARGS)
+{
+    TimestampTz ts = PG_GETARG_TIMESTAMPTZ(0);
+
+    long int gmtoff;
+    if (!pg_get_timezone_offset(session_timezone, &gmtoff)) {
+        /*
+        Fallback: just assume UTC
+        I think pg_get_timezone_offset() returns false for timezones that have multiple
+        offsets (DST-aware timezones), so we may want to do some more intelligent timezone
+        translations here
+        */
+        gmtoff = 0;
+    }
+    TzOffset offset = -gmtoff / SECS_PER_MINUTE;
+
+    TimestampTp *ret = palloc(sizeof(TimestampTp));
+    ret->timestamp = ts;
+    ret->tzoffset = offset;
+    PG_RETURN_TIMESTAMPTP(ret);
+}
