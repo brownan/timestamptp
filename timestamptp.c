@@ -254,7 +254,7 @@ make_timestamptp_in_timezone(PG_FUNCTION_ARGS)
     if (timestamp2tm(timestamp, &tz, &info, &fsec, NULL, timezone) != 0) {
         ereport(
             ERROR,
-            errmsg("timestamptz is out of range")
+            errmsg("timestamptp is out of range")
         );
     }
 

@@ -60,3 +60,20 @@ SELECT make_timestamptp('2000-01-01 00:00:00 +00:00'::timestamptz, 'EST'::text);
 SELECT make_timestamptp('2000-01-01 00:00:00 +00:00'::timestamptz, 'EDT'::text);
 SELECT make_timestamptp('2000-01-01 00:00:00 +00:00'::timestamptz, 'PST'::text);
 SELECT make_timestamptp('2000-01-01 00:00:00 +00:00'::timestamptz, 'US/Eastern'::text);
+
+--
+-- Test operators
+SELECT '2000-01-01 00:00:00 +00:00'::timestamptp = '2000-01-01 00:00:00 +00:00'::timestamptp;
+SELECT '2000-01-01 00:00:00 +00:00'::timestamptp = '2000-01-02 00:00:00 +00:00'::timestamptp;
+SELECT '2000-01-01 00:00:00 +00:00'::timestamptp = make_timestamptp('2000-01-01 00:00:00 +00:00'::timestamptz, 700);
+
+--
+-- timestamptp = timestamptz
+SELECT '2000-01-01 00:00:00 +00:00'::timestamptp = '2000-01-01 00:00:00 +00:00'::timestamptz;
+SELECT '2000-01-01 00:00:00 +05:00'::timestamptp = '2000-01-01 00:00:00 +05:00'::timestamptz;
+SELECT '2000-01-01 00:00:00 +00:00'::timestamptz = '2000-01-01 00:00:00 +00:00'::timestamptp;
+
+--
+-- Test timestamptp + interval
+SELECT '2000-01-01 00:00:00 +02:00'::timestamptp + '5 days'::interval;
+SELECT '5 days'::interval + '2000-01-01 00:00:00 +02:00'::timestamptp;

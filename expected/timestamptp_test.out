@@ -157,3 +157,57 @@ SELECT make_timestamptp('2000-01-01 00:00:00 +00:00'::timestamptz, 'US/Eastern':
  1999-12-31 19:00:00-05
 (1 row)
 
+--
+-- Test operators
+SELECT '2000-01-01 00:00:00 +00:00'::timestamptp = '2000-01-01 00:00:00 +00:00'::timestamptp;
+ ?column? 
+----------
+ t
+(1 row)
+
+SELECT '2000-01-01 00:00:00 +00:00'::timestamptp = '2000-01-02 00:00:00 +00:00'::timestamptp;
+ ?column? 
+----------
+ f
+(1 row)
+
+SELECT '2000-01-01 00:00:00 +00:00'::timestamptp = make_timestamptp('2000-01-01 00:00:00 +00:00'::timestamptz, 700);
+ ?column? 
+----------
+ t
+(1 row)
+
+--
+-- timestamptp = timestamptz
+SELECT '2000-01-01 00:00:00 +00:00'::timestamptp = '2000-01-01 00:00:00 +00:00'::timestamptz;
+ ?column? 
+----------
+ t
+(1 row)
+
+SELECT '2000-01-01 00:00:00 +05:00'::timestamptp = '2000-01-01 00:00:00 +05:00'::timestamptz;
+ ?column? 
+----------
+ t
+(1 row)
+
+SELECT '2000-01-01 00:00:00 +00:00'::timestamptz = '2000-01-01 00:00:00 +00:00'::timestamptp;
+ ?column? 
+----------
+ t
+(1 row)
+
+--
+-- Test timestamptp + interval
+SELECT '2000-01-01 00:00:00 +02:00'::timestamptp + '5 days'::interval;
+        ?column?        
+------------------------
+ 2000-01-06 00:00:00+02
+(1 row)
+
+SELECT '5 days'::interval + '2000-01-01 00:00:00 +02:00'::timestamptp;
+        ?column?        
+------------------------
+ 2000-01-06 00:00:00+02
+(1 row)
+
