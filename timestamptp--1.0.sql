@@ -52,7 +52,7 @@ AS ASSIGNMENT;
 -- Operator Functions and operator declarations
 CREATE FUNCTION timestamptp_eq(x timestamptp, y timestamptp) RETURNS bool AS $$
     SELECT x::timestamptz = y::timestamptz;
-$$ LANGUAGE SQL;
+$$ LANGUAGE SQL LEAKPROOF STRICT IMMUTABLE PARALLEL SAFE;
 
 CREATE OPERATOR = (
  FUNCTION = timestamptp_eq,
