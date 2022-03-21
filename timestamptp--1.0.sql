@@ -47,13 +47,7 @@ CREATE CAST (timestamptz AS timestamptp)
 WITH FUNCTION timestamptz_to_timestamptp
 AS ASSIGNMENT;
 
--- Add implicit cast from timestamptz to timestamptp so that the following
--- functions work with a combination of the two types
-
--- maybe a reverse cast to timestamptz so that the regular functions will
--- work if a custom one isn't defined? Do postgres casts work like that?
-
--- Functions to implement:
+-- Functions and operators to implement:
 -- timestamptp = timestamptp
 -- to_char(timestamptz, text)
 -- timestamptp + interval
