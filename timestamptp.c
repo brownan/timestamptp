@@ -156,16 +156,16 @@ timestamptp_out(PG_FUNCTION_ARGS)
 
 
 /*
-get_timestamp(timestamptp) -> timestamptz
+timestamptp_to_timestamptz(timestamptp) -> timestamptz
 
-Also implements the timestamptp -> timestamptz cast
+Implements the timestamptp -> timestamptz cast
 
 Returns the timestamptz timestamp in this timestamptp. Timezone offset information will be
 lost, but the timestamptz will still refer to the same timestamp, just in GMT.
 */
-PG_FUNCTION_INFO_V1(get_timestamp);
+PG_FUNCTION_INFO_V1(timestamptp_to_timestamptz);
 Datum
-get_timestamp(PG_FUNCTION_ARGS)
+timestamptp_to_timestamptz(PG_FUNCTION_ARGS)
 {
     TimestampTp *timestamp = PG_GETARG_TIMESTAMPTP(0);
     PG_RETURN_TIMESTAMPTZ(timestamp->timestamp);

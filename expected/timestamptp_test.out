@@ -25,8 +25,8 @@ SELECT '2000-01-01 00:00:00Z'::timestamptp;
 
 --
 -- Extract timestamptz and offset from a timestamptp
-SELECT get_timestamp('2000-01-01 00:00:00 -07:00'::timestamptp);
-        get_timestamp         
+SELECT '2000-01-01 00:00:00 -07:00'::timestamptp::timestamptz;
+         timestamptz          
 ------------------------------
  Sat Jan 01 02:00:00 2000 EST
 (1 row)
